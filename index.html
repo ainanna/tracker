@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aion 2 Task Tracker</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b1220">
+
+<style>
+:root{
+  --bg:#0b1220;--card:#111a2e;--border:#1f2a44;
+  --text:#e5e7eb;--accent:#38bdf8;--ok:#22c55e;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;font-family:system-ui;
+  background:linear-gradient(160deg,#0b1220,#060a14);
+  color:var(--text)
+}
+.container{max-width:1100px;margin:auto;padding:16px}
+h1{font-size:20px;margin-bottom:10px}
+
+.reset-bar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.reset-bar span{
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--border);
+  padding:6px 10px;border-radius:8px;font-size:13px
+}
+
+.add-char{display:flex;gap:8px;margin-bottom:16px}
+.add-char input{
+  flex:1;background:var(--card);
+  border:1px solid var(--border);
+  color:var(--text);padding:8px;border-radius:8px
+}
+.add-char button{
+  background:var(--accent);
+  border:none;padding:8px 14px;
+  border-radius:8px;font-weight:600;cursor:pointer
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:14px
+}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px;
+  animation:fade .25s ease
+}
+.card.complete{
+  box-shadow:
+    0 0 0 1px rgba(34,197,94,.5),
+    0 0 14px rgba(34,197,94,.25);
+}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+
+.card-header{
+  display:flex;justify-content:space-between;align-items:center
+}
+.card-header button{
+  background:none;border:none;color:#ef4444;
+  cursor:pointer;font-size:14px
+}
+
+.progress{
+  height:8px;background:#0a1020;
+  border-radius:6px;overflow:hidden;
+  border:1px solid var(--border);
+  margin:6px 0
+}
+.progress span{
+  display:block;height:100%;
+  background:linear-gradient(90deg,#38bdf8,#22d3ee);
+  transition:width .3s ease
+}
+.progress.complete span{
+  background:linear-gradient(90deg,#22c55e,#4ade80);
+  box-shadow:0 0 6px #22c55e,0 0 12px rgba(34,197,94,.7)
+}
+
+.section-title{font-size:13px;opacity:.6;margin-top:6px}
+.task{display:flex;gap:8px;font-size:14px;margin:4px 0}
+.task input{accent-color:#38bdf8}
+
+.footer{text-align:center;font-size:12px;opacity:.5;margin-top:18px}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>⚔️ Aion 2 Task Tracker</h1>
+
+<div class="reset-bar">
+  <span>🗓️ Daily ⏰ <b id="dailyTimer"></b></span>
+  <span>🧪 Craft ⏰ <b id="craftTimer"></b></span>
+  <span>🛒 Shop ⏰ <b id="shopTimer"></b></span>
+</div>
+
+<div class="add-char">
+  <input id="charName" placeholder="Nama Character">
+  <button onclick="addCharacter()">＋ Add</button>
+</div>
+
+<div id="grid" class="grid"></div>
+
+<div class="footer">Auto Reset Aktif · WIB (GMT+7)</div>
+</div>
+
+<script>
+/* ===== TIME (WIB) ===== */
+const WIB=7*3600*1000;
+const nowWIB=()=>new Date(Date.now()+WIB);
+const fmt=ms=>{
+  if(ms<0)ms=0;
+  const s=Math.floor(ms/1000);
+  const d=Math.floor(s/86400);
+  const h=Math.floor((s%86400)/3600);
+  const m=Math.floor((s%3600)/60);
+  return `${d?d+"d ":""}${h}h ${m}m`;
+};
+const nextDaily=()=>{
+  const n=nowWIB(),r=new Date(n);
+  r.setHours(4,0,0,0);
+  if(n>=r)r.setDate(r.getDate()+1);
+  return r;
+};
+const nextCraft=()=>{
+  const n=nowWIB(),r=new Date(n);
+  r.setHours(7,0,0,0);
+  const diff=(3-r.getDay()+7)%7;
+  r.setDate(r.getDate()+diff);
+  if(diff===0&&n>=r)r.setDate(r.getDate()+7);
+  return r;
+};
+const nextShop=()=>{
+  const n=nowWIB(),r=new Date(n);
+  r.setHours(23,0,0,0);
+  const diff=(7-r.getDay())%7;
+  r.setDate(r.getDate()+diff);
+  if(diff===0&&n>=r)r.setDate(r.getDate()+7);
+  return r;
+};
+
+/* ===== DATA ===== */
+const DAILY=["Duty","Abyss Portal","Daily Dungeon","Nightmare","Ascension Trial"];
+let chars=JSON.parse(localStorage.getItem("aion2_chars")||"[]");
+const dailyProgress=c=>{
+  const done=DAILY.filter(t=>c.daily[t]).length;
+  return Math.round(done/DAILY.length*100);
+};
+
+/* ===== RESET (AMAN) ===== */
+function resetCheck(){
+  const n=Date.now();
+  if(!localStorage.lastDaily||n>localStorage.lastDaily){
+    chars.forEach(c=>DAILY.forEach(t=>c.daily[t]=false));
+    localStorage.lastDaily=nextDaily().getTime();
+  }
+  if(!localStorage.lastCraft||n>localStorage.lastCraft){
+    chars.forEach(c=>c.weekly.craft=false);
+    localStorage.lastCraft=nextCraft().getTime();
+  }
+  if(!localStorage.lastShop||n>localStorage.lastShop){
+    chars.forEach(c=>c.weekly.shop=false);
+    localStorage.lastShop=nextShop().getTime();
+  }
+  save(false);
+}
+
+/* ===== CRUD ===== */
+function save(renderNow=true){
+  localStorage.setItem("aion2_chars",JSON.stringify(chars));
+  if(renderNow)render();
+}
+function addCharacter(){
+  if(!charName.value.trim())return;
+  chars.push({
+    id:Date.now(),
+    name:charName.value.trim(),
+    daily:Object.fromEntries(DAILY.map(t=>[t,false])),
+    weekly:{craft:false,shop:false}
+  });
+  charName.value="";
+  save();
+}
+function toggle(c,t,g){c[g][t]=!c[g][t];save();}
+function removeChar(id){chars=chars.filter(c=>c.id!==id);save();}
+
+/* ===== RENDER ===== */
+function render(){
+  grid.innerHTML="";
+  chars.forEach(c=>{
+    const p=dailyProgress(c);
+    const el=document.createElement("div");
+    el.className="card"+(p===100?" complete":"");
+    el.innerHTML=`
+      <div class="card-header">
+        <b>${c.name}</b>
+        <button onclick="removeChar(${c.id})">✖</button>
+      </div>
+      <div class="progress ${p===100?"complete":""}">
+        <span style="width:${p}%"></span>
+      </div>
+      <div style="font-size:12px;opacity:.6">${p}%</div>
+
+      <div class="section-title">Daily</div>
+      ${DAILY.map(t=>`
+        <label class="task">
+          <input type="checkbox" ${c.daily[t]?"checked":""}
+          onchange="toggle(chars.find(x=>x.id===${c.id}),'${t}','daily')">
+          ${t}
+        </label>`).join("")}
+
+      <div class="section-title">Weekly</div>
+      <label class="task">
+        <input type="checkbox" ${c.weekly.craft?"checked":""}
+        onchange="toggle(chars.find(x=>x.id===${c.id}),'craft','weekly')">
+        Craft Odyle Energy
+      </label>
+      <label class="task">
+        <input type="checkbox" ${c.weekly.shop?"checked":""}
+        onchange="toggle(chars.find(x=>x.id===${c.id}),'shop','weekly')">
+        Buy Odyle Energy
+      </label>
+    `;
+    grid.appendChild(el);
+  });
+}
+
+/* ===== LOOP ===== */
+setInterval(()=>{
+  dailyTimer.textContent=fmt(nextDaily()-nowWIB());
+  craftTimer.textContent=fmt(nextCraft()-nowWIB());
+  shopTimer.textContent =fmt(nextShop()-nowWIB());
+  resetCheck();
+},1000);
+
+render();
+
+/* ===== PWA ===== */
+if("serviceWorker"in navigator){
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+</body>
+</html>
